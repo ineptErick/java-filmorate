@@ -1,101 +1,160 @@
 package ru.yandex.practicum.filmorate;
 
-import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Test;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.jdbc.core.JdbcTemplate;
-import ru.yandex.practicum.filmorate.controllers.FilmController;
+import ru.yandex.practicum.filmorate.controller.FilmController;
+import ru.yandex.practicum.filmorate.controller.UserController;
 import ru.yandex.practicum.filmorate.exceptions.ValidationException;
 import ru.yandex.practicum.filmorate.model.Film;
-import ru.yandex.practicum.filmorate.service.film.FilmService;
-import ru.yandex.practicum.filmorate.storage.film.FilmStorage;
-import ru.yandex.practicum.filmorate.storage.film.InMemoryFilmStorage;
-import ru.yandex.practicum.filmorate.storage.like.LikeStorage;
-import ru.yandex.practicum.filmorate.storage.user.InMemoryUserStorage;
-import ru.yandex.practicum.filmorate.storage.user.UserStorage;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
 
 import java.time.LocalDate;
+import java.util.List;
+import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.*;
 
-@SpringBootTest
-
-public class FilmControllerTest {
-    private Film film;
+public class FilmControllerTest extends FilmorateAppControllerTest {
     private FilmController filmController;
-    private FilmStorage filmStorage;
-    private UserStorage userStorage;
-    private LikeStorage likeStorage;
+    private UserController userController;
+    private Film film;
 
     @BeforeEach
-    public void beforeEach() {
-        filmStorage = new InMemoryFilmStorage();
-        userStorage = new InMemoryUserStorage();
+    @Override
+    void getController() {
+        this.filmController = new FilmController(filmService);
+        this.userController = new UserController(userService);
+    }
 
-        filmController = new FilmController(filmStorage, new FilmService(filmStorage, userStorage, null));
+    @Test
+    void blankFilmNameTest() {
         film = Film.builder()
-                .name("Breakfast at Tiffany's")
-                .description("American romantic comedy film directed by Blake Edwards, written by George Axelrod," +
-                        " adapted from Truman Capote's 1958 novella of the same name.")
-                .releaseDate(LocalDate.of(1961,10,5))
-                .duration(114)
+                .name("")
+                .id(1)
+                .description("test description")
+                .releaseDate(LocalDate.now().minusDays(30))
+                .duration(100)
                 .build();
+
+        final ValidationException ex = assertThrows(
+                ValidationException.class,
+                () -> filmController.create(film)
+        );
+
+        assertEquals(ex.getMessage(), "Название фильма не может быть пустым");
     }
 
-    // проверка контроллера при корректных атрибутах фильма
     @Test
-    public void shouldAddFilmWhenAllAttributeCorrect() {
-        Film film1 = filmController.create(film);
-        assertEquals(film, film1, "Переданный и полученный фильмы должны совпадать");
-        assertEquals(1, filmController.getFilms().size(), "В списке должен быть один фильм");
+    void longFilmDescriptionTest() {
+        String longDescription = fillString(201, 'r');
+        film = Film.builder()
+                .name("Test")
+                .id(1)
+                .description(longDescription)
+                .releaseDate(LocalDate.now().minusDays(30))
+                .duration(100)
+                .build();
+
+        final ValidationException ex = assertThrows(
+                ValidationException.class,
+                () -> filmController.create(film)
+        );
+
+        assertEquals(ex.getMessage(), "Слишком длинное описание фильма");
     }
 
-    // проверка контроллера при "пустом" названии у фильма
     @Test
-    public void shouldNoAddFilmWhenFilmNameIsEmpty() {
-        film.setName("");
-        assertThrows(ValidationException.class, () -> filmController.create(film));
-        assertEquals(0, filmController.getFilms().size(), "Список фильмов должен быть пустым");
+    void releaseDateFilmTest() {
+        film = Film.builder()
+                .name("Test")
+                .id(1)
+                .description("Test description")
+                .releaseDate(LocalDate.now().minusYears(150))
+                .duration(100)
+                .build();
+
+        final ValidationException ex = assertThrows(
+                ValidationException.class,
+                () -> filmController.create(film)
+        );
+
+        assertEquals(ex.getMessage(), "Дата релиза не может быть раньше 28 декабря 1895 года");
     }
 
-    // проверка контроллера, когда максимальная длина описания больше 200 символов
     @Test
-    public void shouldNoAddFilmWhenFilmDescriptionMoreThan200Symbols() {
-        film.setDescription(film.getDescription() + film.getDescription()); // длина описания 286 символов
-        assertThrows(ValidationException.class, () -> filmController.create(film));
-        assertEquals(0, filmController.getFilms().size(), "Список фильмов должен быть пустым");
+    void negativeDurationFilmTest() {
+        film = Film.builder()
+                .name("Test")
+                .id(1)
+                .description("Test description")
+                .releaseDate(LocalDate.now().minusYears(1))
+                .duration(-1)
+                .build();
+
+        final ValidationException ex = assertThrows(
+                ValidationException.class,
+                () -> filmController.create(film)
+        );
+
+        assertEquals(ex.getMessage(), "Продолжительность фильма должна быть положительной");
     }
 
-    // проверка контроллера, когда у фильма нет описания
     @Test
-    public void shouldNoAddFilmWhenFilmDescriptionIsEmpty() {
-        film.setDescription("");
-        assertThrows(ValidationException.class, () -> filmController.create(film));
-        assertEquals(0, filmController.getFilms().size(), "Список фильмов должен быть пустым");
+    void getAllFilmsTest() {
+        fillFilmStorageWithSimpleFilms();
+
+        assertEquals(MAX_SIMPLE_FILMS, filmController.findAll().size());
     }
 
-    // проверка контроллера, когда дата релиза фильма раньше 28-12-1895
     @Test
-    public void shouldNoAddFilmWhenFilmReleaseDateIsBefore28121895() {
-        film.setReleaseDate(LocalDate.of(1895,12,27));
-        assertThrows(ValidationException.class, () -> filmController.create(film));
-        assertEquals(0, filmController.getFilms().size(), "Список фильмов должен быть пустым");
+    void getFilmByIdTest() {
+        filmController.create(simpleFilms.get(0));
+
+        assertEquals(simpleFilms.get(0), filmController.getFilmById(1));
     }
 
-    // проверка контроллера, когда продолжительность фильма равна нулю
     @Test
-    public void shouldNoAddFilmWhenFilmDurationIsZero() {
-        film.setDuration(0);
-        assertThrows(ValidationException.class, () -> filmController.create(film));
-        assertEquals(0, filmController.getFilms().size(), "Список фильмов должен быть пустым");
+    void setLikeUnlikeAndGetPopularFilms() {
+        fillFilmStorageWithSimpleFilms();
+        userController.create(simpleUsers.get(0));
+
+        List<Film> top = filmController.getTopFilms(5);
+
+        assertEquals(5, top.size());
+
+        Film savedFilm = top.get(0);
+        int savedRate = savedFilm.getRate();
+
+        assertEquals(simpleFilms.get(MAX_SIMPLE_FILMS - 1).getRate(), savedRate);
+
+        filmController.likeFilm(1, savedFilm.getId());
+
+        assertNotEquals(savedRate, savedFilm.getRate());
+
+        filmController.likeFilm(1, savedFilm.getId());
+        filmController.likeFilm(1, savedFilm.getId());
+        filmController.likeFilm(1, savedFilm.getId());
+        filmController.likeFilm(1, savedFilm.getId());
+
+        assertEquals(savedRate + 1, savedFilm.getRate());
+
+        filmController.unlikeFilm(1, savedFilm.getId());
+        filmController.unlikeFilm(1, savedFilm.getId());
+
+        assertEquals(savedRate, savedFilm.getRate());
     }
 
-    // проверка контроллера, когда продолжительность фильма отрицательная
-    @Test
-    public void shouldNoAddFilmWhenFilmDurationIsNegative() {
-        film.setDuration(-1);
-        assertThrows(ValidationException.class, () -> filmController.create(film));
-        assertEquals(0, filmController.getFilms().size(), "Список фильмов должен быть пустым");
+    private String fillString(int count,char c) {
+        StringBuilder sb = new StringBuilder(count);
+        for(int i=0; i<count; i++) {
+            sb.append(c);
+        }
+        return sb.toString();
     }
+
+    private void fillFilmStorageWithSimpleFilms() {
+        for (Film film : simpleFilms) {
+            filmController.create(film);
+        }
+    }
+
 }
