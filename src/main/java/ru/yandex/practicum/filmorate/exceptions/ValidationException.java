@@ -1,12 +1,12 @@
 package ru.yandex.practicum.filmorate.exceptions;
 
-import lombok.extern.slf4j.Slf4j;
+public class ValidationException extends RuntimeException {
 
-@Slf4j
-public class ValidationException extends IllegalArgumentException {
-    public ValidationException(String message) {
-        log.error(message);
+    public ValidationException(final String message) {
+        super(message);
+    }
+
+    public String getDetailMessage() {
+        return getMessage();
     }
 }
-
-

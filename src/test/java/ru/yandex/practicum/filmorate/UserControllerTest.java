@@ -1,93 +1,153 @@
 package ru.yandex.practicum.filmorate;
 
-import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Test;
-import org.springframework.boot.test.context.SpringBootTest;
-import ru.yandex.practicum.filmorate.controllers.UserController;
+import ru.yandex.practicum.filmorate.controller.UserController;
 import ru.yandex.practicum.filmorate.exceptions.ValidationException;
 import ru.yandex.practicum.filmorate.model.User;
-import ru.yandex.practicum.filmorate.service.user.UserService;
-import ru.yandex.practicum.filmorate.storage.user.InMemoryUserStorage;
-import ru.yandex.practicum.filmorate.storage.user.UserStorage;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
 
 import java.time.LocalDate;
 
 import static org.junit.jupiter.api.Assertions.*;
 
-@SpringBootTest
-public class UserControllerTest {
-
-    private User user;
+public class UserControllerTest extends FilmorateAppControllerTest{
     private UserController userController;
-    private UserStorage userStorage;
+    private User user;
 
     @BeforeEach
-    public void beforeEach() {
-        userStorage = new InMemoryUserStorage();
-        userController = new UserController(userStorage, new UserService(userStorage, null));
+    @Override
+    void getController() {
+        userController = new UserController(userService);
+    }
+
+    @Test
+    void blankEmailValidationTest() {
         user = User.builder()
-                .name("Maria")
-                .login("MariaMs")
-                .email("1@ya.ru")
-                .birthday(LocalDate.of(1999, 1, 21))
+                .id(1)
+                .email("")
+                .login("Test")
+                .name("Name")
+                .birthday(LocalDate.now().minusYears(20))
                 .build();
+
+        final ValidationException ex = assertThrows(
+                ValidationException.class,
+                () -> userController.create(user)
+        );
+
+        assertEquals(ex.getMessage(), "Неверный формат для электронной почты");
     }
 
-    // проверка контроллера при корректных атрибутах пользователя
     @Test
-    public void shouldAddUserWhenAllAttributeCorrect() {
-        User user1 = userController.create(user);
-        assertEquals(user, user1, "Переданный и полученный пользователь должны совпадать");
-        assertEquals(1, userController.getUsers().size(), "В списке должен быть один пользователь");
+    void emailWithoutAtSignValidationTest() {
+        user = User.builder()
+                .id(1)
+                .email("test.yandex.ru")
+                .login("Test")
+                .name("Name")
+                .birthday(LocalDate.now().minusYears(20))
+                .build();
+
+        final ValidationException ex = assertThrows(
+                ValidationException.class,
+                () -> userController.create(user)
+        );
+
+        assertEquals(ex.getMessage(), "Неверный формат для электронной почты");
     }
 
-    // проверка контроллера при "пустой" электронной почте пользователя
     @Test
-    public void shouldNoAddUserWhenUserEmailIsEmpty() {
-        user.setEmail("");
-        assertThrows(ValidationException.class, () -> userController.create(user));
-        assertEquals(0, userController.getUsers().size(), "Список пользователей должен быть пустым");
+    void blankLoginValidationTest() {
+        user = User.builder()
+                .id(1)
+                .email("test@yandex.ru")
+                .login("")
+                .name("Name")
+                .birthday(LocalDate.now().minusYears(20))
+                .build();
+
+        final ValidationException ex = assertThrows(
+                ValidationException.class,
+                () -> userController.create(user)
+        );
+
+        assertEquals(ex.getMessage(), "Логин не может быть пустым или содержать пробелы");
     }
 
-    // проверка контроллера, когда электронная почта не содержит символа @
     @Test
-    public void shouldNoAddUserWhenUserEmailIsNotContainsCommercialAt() {
-        user.setEmail("notemail.ru");
-        assertThrows(ValidationException.class, () -> userController.create(user));
-        assertEquals(0, userController.getUsers().size(), "Список пользователей должен быть пустым");
+    void loginWithSpacesValidationTest() {
+        user = User.builder()
+                .id(1)
+                .email("test@yandex.ru")
+                .login("User test")
+                .name("Name")
+                .birthday(LocalDate.now().minusYears(20))
+                .build();
+
+        final ValidationException ex = assertThrows(
+                ValidationException.class,
+                () -> userController.create(user)
+        );
+
+        assertEquals(ex.getMessage(), "Логин не может быть пустым или содержать пробелы");
     }
 
-    // проверка контроллера, когда у пользователя пустой логин
     @Test
-    public void shouldNoAddUserWhenUserLoginIsEmpty() {
-        user.setLogin("");
-        assertThrows(ValidationException.class, () -> userController.create(user));
-        assertEquals(0, userController.getUsers().size(), "Список пользователей должен быть пустым");
+    void birthdayInFutureValidationTest() {
+        user = User.builder()
+                .id(1)
+                .email("test@yandex.ru")
+                .login("User")
+                .name("Name")
+                .birthday(LocalDate.now().plusYears(1))
+                .build();
+
+        final ValidationException ex = assertThrows(
+                ValidationException.class,
+                () -> userController.create(user)
+        );
+
+        assertEquals(ex.getMessage(), "Дата рождения не может быть в будущем");
     }
 
-    // проверка контроллера, когда логин пользователя содержит пробелы
     @Test
-    public void shouldNoAddUserWhenUserLoginIsContainsSpaces() {
-        user.setLogin("Maria Ms");
-        assertThrows(ValidationException.class, () -> userController.create(user));
-        assertEquals(0, userController.getUsers().size(), "Список пользователей должен быть пустым");
+    void blankNameValidationTest() {
+        user = User.builder()
+                .id(1)
+                .email("test@yandex.ru")
+                .login("User")
+                .name("")
+                .birthday(LocalDate.now().minusYears(12))
+                .build();
+
+        assertTrue(user.getName().isBlank());
+
+        userController.create(user);
+
+        assertEquals(user.getName(), user.getLogin());
     }
 
-    // проверка контроллера, когда имя пользователя пустое
     @Test
-    public void shouldAddUserWhenUserNameIsEmpty() {
-        user.setName("");
-        User user1 = userController.create(user);
-        assertTrue(user1.getName().equals(user.getLogin()),
-                "Имя и логин пользователя должны совпадать");
-        assertEquals(1, userController.getUsers().size(), "В списке должен быть один пользователь");
+    void getCommonFriendTest() {
+        fillUserStorageWithSimpleUsers();
+
+        assertEquals(MAX_SIMPLE_USERS, userController.findAll().size());
+
+        final User firstUser = userController.getUser(1);
+        final User secondUser = userController.getUser(2);
+        final User thirdUser = userController.getUser(3);
+
+        userController.addToFriends(firstUser.getId(), secondUser.getId());
+        userController.addToFriends(thirdUser.getId(), secondUser.getId());
+
+        assertEquals(1, userController.getCommonFriends(firstUser.getId(), thirdUser.getId()).size());
+        assertEquals(secondUser, userController.getCommonFriends(firstUser.getId(), thirdUser.getId()).get(0));
     }
 
-    // проверка контроллера, когда дата рождения пользователя в будущем
-    @Test
-    public void shouldAddUserWhenUserBirthdayInFuture() {
-        user.setBirthday(LocalDate.now().plusDays(1));
-        assertThrows(ValidationException.class, () -> userController.create(user));
-        assertEquals(0, userController.getUsers().size(), "Список пользователей должен быть пустым");
+    private void fillUserStorageWithSimpleUsers() {
+        for (User user : simpleUsers) {
+            userController.create(user);
+        }
     }
+
 }
